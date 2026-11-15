@@ -8,6 +8,7 @@ Safety limits enforced here (independently of the backend):
 """
 from __future__ import annotations
 
+import re
 import time
 import urllib.robotparser
 from dataclasses import dataclass, field
@@ -139,8 +140,10 @@ def crawl(cfg: CrawlConfig, log: Logger) -> dict:
     with httpx.Client(headers=headers, timeout=timeout, follow_redirects=False, trust_env=False) as client:
         robots = _load_robots(client, start_url, log) if cfg.respect_robots else None
 
-        def key(u: str) -> str:  # http/https and trailing-slash variants are the same page
-            return u.split("://", 1)[-1].rstrip("/")
+        def key(u: str) -> str:  # http/https, trailing-slash and /index.html variants are the same page
+            k = u.split("://", 1)[-1].split("#", 1)[0]
+            k = re.sub(r"/index\.(html?|php|aspx?)$", "/", k, flags=re.I)
+            return k.removeprefix("www.").rstrip("/")
 
         queue: list[tuple[str, int]] = [(start_url, 0)]
         seen = {key(start_url)}

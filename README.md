@@ -188,7 +188,7 @@ frontend/
 * **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4
 * **Backend:** Python, FastAPI, Pydantic v2, SQLAlchemy 2, httpx
 * **CLI tool:** custom `taskpilot_cli` (httpx + BeautifulSoup4 + urllib.robotparser)
-* **Runtime AI services (optional):** Google Gemini API or OpenAI API, for intent understanding and summarisation
+* **Runtime AI service:** OpenAI API (`gpt-4.1-mini`), used for intent understanding and summarisation in the demo. Google Gemini is supported as an alternative, and without any key the app falls back to rule-based parsing and extractive summaries.
 * **Development:** built with the help of an AI coding assistant (Claude Code). Architecture, security design and verification are the author's own.
 
 ## Extending with more tools
