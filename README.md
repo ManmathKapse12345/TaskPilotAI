@@ -116,11 +116,13 @@ API docs: http://localhost:8000/docs · Health: http://localhost:8000/api/health
 ```bash
 cd frontend
 npm install
-cp .env.example .env.local    # NEXT_PUBLIC_API_URL=http://localhost:8000
 npm run dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000. The frontend calls `http://localhost:8000` by default. Only if your backend runs elsewhere,
+create `frontend/.env.local` containing `NEXT_PUBLIC_API_URL=http://your-backend:port`.
+
+For a faster production run: `npm run build` then `npm run start`.
 
 ### Environment variables (`backend/.env`)
 
