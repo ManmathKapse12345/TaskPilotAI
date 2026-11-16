@@ -82,14 +82,14 @@ function History({ initialQuery }: { initialQuery: string }) {
   };
 
   const retry = async (t: TaskSummaryRow) => {
-    try { const id = await ws.submit(t.prompt); router.push(`/live?id=${id}`); }
+    try { const id = await ws.submit(t.prompt); router.push(`/?task=${id}`); }
     catch (e) { toast({ tone: "error", title: (e as Error & { title?: string }).title ?? "Could not retry", body: (e as Error).message }); }
   };
 
   const select = (id: string) => { setSelectedId(id); setClosed(false); };
 
   return (
-    <div className="flex w-full flex-col">
+    <div className="flex w-full flex-col pb-8">
       <div className="mb-6"><MetricCards rows={ws.history} /></div>
 
       <div className="mb-4 flex flex-col justify-between gap-3 lg:flex-row lg:items-center">
@@ -111,7 +111,7 @@ function History({ initialQuery }: { initialQuery: string }) {
         <div className="flex flex-wrap items-center gap-2">
           <label className="flex w-full items-center gap-1 rounded-lg bg-surface-container-low px-2 py-2 text-on-surface-variant focus-within:ring-1 focus-within:ring-primary/40 sm:w-80">
             <Search className="h-4 w-4" />
-            <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0); }} placeholder="Filter by URL, ID, prompt or exit code…" aria-label="Filter tasks"
+            <input value={query} onChange={(e) => { setQuery(e.target.value); setPage(0); }} placeholder="Search by website or request…" aria-label="Filter tasks"
               className="w-full border-0 bg-transparent text-body-sm text-on-surface outline-none placeholder:text-on-surface-variant" />
           </label>
           <label className="flex items-center gap-1 rounded-lg bg-surface-container-low px-3 py-2 text-label-md font-medium text-on-surface-variant transition-colors hover:bg-surface-container hover:text-on-surface">
@@ -141,9 +141,9 @@ function History({ initialQuery }: { initialQuery: string }) {
                 <tr className="select-none bg-surface-container-lowest font-mono text-label-code uppercase tracking-wider text-on-surface-variant">
                   <th className="px-4 py-3 font-semibold">Status</th>
                   <th className="px-4 py-3 font-semibold">Task ID</th>
-                  <th className="px-4 py-3 font-semibold">Target</th>
-                  <th className="px-4 py-3 font-semibold">Directive</th>
-                  <th className="px-4 py-3 font-semibold">Exit / Intent</th>
+                  <th className="px-4 py-3 font-semibold">Website</th>
+                  <th className="px-4 py-3 font-semibold">Request</th>
+                  <th className="px-4 py-3 font-semibold">Outcome</th>
                   <th className="px-4 py-3 font-semibold">Runtime</th>
                   <th className="px-4 py-3 font-semibold">Started</th>
                   <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -156,7 +156,7 @@ function History({ initialQuery }: { initialQuery: string }) {
                 {ws.historyLoaded && shown.length === 0 && (
                   <tr><td colSpan={8} className="p-4">
                     <EmptyState className="bg-transparent py-8" icon={<Inbox className="h-5 w-5" />} title={ws.history.length ? "No tasks match these filters" : "No tasks yet"}>
-                      {ws.history.length ? "Clear the search or pick another status or date range." : "Dispatch a task from the Agent Workspace; every run is stored with its full execution log."}
+                      {ws.history.length ? "Clear the search or pick another status or date range." : "Start a task from Home. Every run is saved here with its results and log."}
                     </EmptyState>
                   </td></tr>
                 )}
@@ -198,26 +198,27 @@ function History({ initialQuery }: { initialQuery: string }) {
                       </td>
                       <td className="max-w-xs truncate px-4 py-3 text-on-surface-variant group-hover:text-on-surface" title={t.prompt}>{t.prompt}</td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-code-sm">
-                        {t.exit_code != null
-                          ? <span className={t.exit_code === 0 ? "text-primary" : t.exit_code === 1 ? "text-warn" : "text-error"}>exit {t.exit_code}</span>
-                          : <span className="text-on-surface-variant">–</span>}
-                        <span className="ml-1 text-on-surface-variant">• {t.intent ?? "pending"}</span>
+                        <span title={t.exit_code != null ? `CLI exit code ${t.exit_code}` : undefined}
+                          className={t.status === "completed" ? "text-primary" : t.status === "partial" ? "text-warn" : GROUP.failed(t) ? "text-error" : "text-on-surface-variant"}>
+                          {t.status === "answered" ? "Answered" : t.status === "completed" ? "Data ready" : t.status === "partial" ? "Some pages missing"
+                            : t.status === "cancelled" ? "Stopped" : t.status === "failed" ? (t.url ? "Error" : "Rejected") : "In progress"}
+                        </span>
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-code-sm text-on-surface">{live ? <span className="text-secondary">running</span> : formatMs(t.duration_ms)}</td>
                       <td className="whitespace-nowrap px-4 py-3 font-mono text-code-sm text-on-surface-variant" title={new Date(t.created_at).toLocaleString()}>{timeAgo(t.created_at)}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-1">
                           {live ? (
-                            <Link href={`/live?id=${t.id}`} className="rounded bg-secondary/10 px-2 py-1 font-mono text-label-code font-medium text-secondary transition-colors hover:bg-secondary/20">Live CLI</Link>
+                            <Link href={`/?task=${t.id}`} className="rounded bg-secondary/10 px-2 py-1 font-mono text-label-code font-medium text-secondary transition-colors hover:bg-secondary/20">Watch live</Link>
                           ) : failed ? (
                             <button type="button" onClick={() => retry(t)} disabled={ws.submitting || ws.healthError}
                               className="flex items-center gap-1 rounded bg-error/10 px-2 py-1 font-mono text-label-code font-semibold text-error transition-colors hover:bg-error/20 disabled:opacity-40">
                               <RotateCw className="h-3.5 w-3.5" />Retry
                             </button>
                           ) : t.status === "answered" ? (
-                            <Link href={`/live?id=${t.id}`} className="rounded bg-surface-container-high px-2 py-1 font-mono text-label-code text-on-surface transition-colors hover:bg-surface-bright">View answer</Link>
+                            <Link href={`/?task=${t.id}`} className="rounded bg-surface-container-high px-2 py-1 font-mono text-label-code text-on-surface transition-colors hover:bg-surface-bright">View answer</Link>
                           ) : (
-                            <Link href={`/results?id=${t.id}`} className="rounded bg-surface-container-high px-2 py-1 font-mono text-label-code text-on-surface transition-colors hover:bg-surface-bright">View JSON</Link>
+                            <Link href={`/?task=${t.id}`} className="rounded bg-surface-container-high px-2 py-1 font-mono text-label-code text-on-surface transition-colors hover:bg-surface-bright">Open chat</Link>
                           )}
                           <button type="button" onClick={() => ws.toggleSave(t.id)} title={isSaved ? "Remove from saved" : "Save result"} aria-label={isSaved ? "Remove from saved" : "Save result"}
                             className={cx("rounded p-1 transition-colors hover:bg-surface-container", isSaved ? "text-primary" : "text-on-surface-variant hover:text-on-surface")}>

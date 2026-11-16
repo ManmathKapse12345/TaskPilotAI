@@ -32,7 +32,7 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
 
   const copy = (text: string, title: string) => navigator.clipboard.writeText(text).then(() => toast({ tone: "success", title }), () => toast({ tone: "error", title: "Clipboard unavailable" }));
   const retry = async () => {
-    try { const id = await ws.submit(row.prompt); router.push(`/live?id=${id}`); }
+    try { const id = await ws.submit(row.prompt); router.push(`/?task=${id}`); }
     catch (e) { toast({ tone: "error", title: (e as Error & { title?: string }).title ?? "Could not retry", body: (e as Error).message }); }
   };
 
@@ -48,11 +48,11 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
                 {row.exit_code != null ? `Exit ${row.exit_code}` : meta.label}
               </span>
             </div>
-            <div className="font-mono text-label-code text-on-surface-variant">Task Run Diagnostics</div>
+            <div className="font-mono text-label-code text-on-surface-variant">Task details</div>
           </div>
         </div>
         <div className="flex items-center gap-1">
-          <Link href={`/${live || failed ? "live" : "results"}?id=${row.id}`} title="Open full view" aria-label="Open full view"
+          <Link href={`/?task=${row.id}`} title="Open full view" aria-label="Open full view"
             className="rounded bg-surface-container-low p-1 text-on-surface-variant transition-colors hover:text-on-surface"><Maximize2 className="h-4 w-4" /></Link>
           <button type="button" onClick={onClose} title="Close" aria-label="Close inspector"
             className="rounded bg-surface-container-low p-1 text-on-surface-variant transition-colors hover:text-on-surface"><X className="h-4 w-4" /></button>
@@ -75,7 +75,7 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
 
       {failed && (r?.error || r?.execution?.exit_meaning) && (
         <div className="flex flex-col gap-1.5">
-          <span className="flex items-center gap-1 font-mono text-label-code font-semibold uppercase text-error"><AlertTriangle className="h-3.5 w-3.5" />Failure Diagnostics</span>
+          <span className="flex items-center gap-1 font-mono text-label-code font-semibold uppercase text-error"><AlertTriangle className="h-3.5 w-3.5" />What went wrong</span>
           <div className="rounded-lg bg-error-container/20 p-2.5 font-mono text-code-sm">
             <p className="mb-1 font-semibold text-error">{r?.status === "cancelled" ? "Cancelled" : "Task failed"}{r?.execution?.exit_code != null ? ` · exit ${r.execution.exit_code}` : ""}</p>
             {r?.error && <p className="break-words text-[11px] leading-relaxed text-on-surface-variant">{r.error}</p>}
@@ -86,7 +86,7 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between">
-          <span className="font-mono text-label-code font-medium uppercase text-on-surface-variant">Execution Log (tail)</span>
+          <span className="font-mono text-label-code font-medium uppercase text-on-surface-variant">Last log lines</span>
           {rows.length > 0 && (
             <button type="button" onClick={() => copy(rows.map((x) => `[${x.tag}] ${x.msg}`).join("\n"), "Log copied")}
               className="flex items-center gap-0.5 font-mono text-label-code text-secondary hover:underline"><Copy className="h-3 w-3" />Copy log</button>
@@ -111,8 +111,8 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
       <div className="flex flex-col gap-2 pt-1">
         <span className="font-mono text-label-code uppercase text-on-surface-variant">Quick Actions</span>
         {live ? (
-          <Link href={`/live?id=${row.id}`} className="glow-primary flex w-full items-center justify-between rounded-lg bg-primary-container px-2 py-2 text-label-md font-semibold text-on-primary-container transition-all hover:bg-primary">
-            <span className="flex items-center gap-1.5"><SquareTerminal className="h-4 w-4" />Follow in Live CLI</span><ArrowRight className="h-4 w-4" />
+          <Link href={`/?task=${row.id}`} className="glow-primary flex w-full items-center justify-between rounded-lg bg-primary-container px-2 py-2 text-label-md font-semibold text-on-primary-container transition-all hover:bg-primary">
+            <span className="flex items-center gap-1.5"><SquareTerminal className="h-4 w-4" />Watch live</span><ArrowRight className="h-4 w-4" />
           </Link>
         ) : (
           <button type="button" onClick={retry} disabled={ws.submitting || ws.healthError}
@@ -121,15 +121,15 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
           </button>
         )}
         {!live && r && (r.data || r.json_output) && (
-          <Link href={`/results?id=${row.id}`} className="flex w-full items-center justify-between rounded-lg bg-surface-container px-2 py-2 text-label-md text-on-surface transition-colors hover:bg-surface-container-high">
-            <span className="flex items-center gap-1.5"><Braces className="h-4 w-4 text-secondary" />Inspect JSON results</span>
+          <Link href={`/?task=${row.id}`} className="flex w-full items-center justify-between rounded-lg bg-surface-container px-2 py-2 text-label-md text-on-surface transition-colors hover:bg-surface-container-high">
+            <span className="flex items-center gap-1.5"><Braces className="h-4 w-4 text-secondary" />Open results</span>
             <span className="font-mono text-label-code text-on-surface-variant">{r.data ? `${r.data.pages.length} pgs` : "json"}</span>
           </Link>
         )}
         {task?.command && (
           <button type="button" onClick={() => copy(task.command!.command, "Command copied")}
             className="flex w-full items-center justify-between rounded-lg bg-surface-container px-2 py-2 text-label-md text-on-surface transition-colors hover:bg-surface-container-high">
-            <span className="flex items-center gap-1.5"><SquareTerminal className="h-4 w-4 text-primary" />Copy reproduction CLI command</span>
+            <span className="flex items-center gap-1.5"><SquareTerminal className="h-4 w-4 text-primary" />Copy CLI command (for developers)</span>
           </button>
         )}
         {FINISHED.includes(row.status) && (
@@ -149,7 +149,7 @@ export function TaskInspector({ row, onClose }: { row: TaskSummaryRow; onClose: 
       </div>
 
       <div className="flex items-center justify-between pt-1 font-mono text-label-code text-on-surface-variant">
-        <span>Stored in backend DB</span>
+        <span>Saved on the server</span>
         <span className="text-primary">{rows.length} events</span>
       </div>
     </aside>

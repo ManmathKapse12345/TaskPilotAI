@@ -139,7 +139,7 @@ function tokenClass(tok: string, isKey: boolean) {
   return "text-[#acedff]";
 }
 
-function Highlighted({ lines, numbers, query }: { lines: string[]; numbers: boolean; query: string }) {
+export function Highlighted({ lines, numbers, query }: { lines: string[]; numbers: boolean; query: string }) {
   const width = String(lines.length).length;
   return (
     <div className="leading-6">

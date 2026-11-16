@@ -65,7 +65,7 @@ export function MetricCards({ rows }: { rows: TaskSummaryRow[] }) {
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
       <Card icon={<Layers className="h-3.5 w-3.5 text-primary" />} title="Total Tasks"
         badge={<span className="rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-label-code font-semibold text-primary">{week} this week</span>}
-        value={rows.length.toLocaleString()} sub={`latest ${rows.length} stored runs`}>
+        value={rows.length.toLocaleString()} sub="most recent tasks">
         <svg className="h-9 w-24 text-primary" fill="none" preserveAspectRatio="none" viewBox="0 0 100 36" aria-label="Tasks per day, last 7 days">
           <defs><linearGradient id="tp-spark" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="currentColor" stopOpacity="0.3" /><stop offset="100%" stopColor="currentColor" stopOpacity="0" /></linearGradient></defs>
           <path d={`M${pts.join(" L")} L100,36 L0,36 Z`} fill="url(#tp-spark)" />
@@ -73,9 +73,9 @@ export function MetricCards({ rows }: { rows: TaskSummaryRow[] }) {
         </svg>
       </Card>
 
-      <Card icon={<Activity className="h-3.5 w-3.5 text-secondary" />} title="CLI Success Rate"
+      <Card icon={<Activity className="h-3.5 w-3.5 text-secondary" />} title="Success rate"
         badge={<span className="rounded-full bg-secondary-container/20 px-1.5 py-0.5 font-mono text-label-code text-secondary">{partial} partial</span>}
-        value={rate == null ? "–" : `${rate.toFixed(1)}%`} sub={`${ok + partial} of ${cli.length} CLI runs`}>
+        value={rate == null ? "–" : `${rate.toFixed(1)}%`} sub={`${ok + partial} of ${cli.length} website tasks succeeded`}>
         <div className="relative flex h-12 w-12 items-center justify-center">
           <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36" aria-hidden>
             <circle className="text-surface-container-high" cx="18" cy="18" r="14" fill="none" stroke="currentColor" strokeWidth="3" />
@@ -86,9 +86,9 @@ export function MetricCards({ rows }: { rows: TaskSummaryRow[] }) {
         </div>
       </Card>
 
-      <Card icon={<Timer className="h-3.5 w-3.5 text-tertiary" />} title="Runtime (p95)"
-        badge={<span className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-label-code text-on-surface-variant">p50: {formatMs(p50)}</span>}
-        value={formatMs(p95)} sub={`${durs.length} timed runs`}>
+      <Card icon={<Timer className="h-3.5 w-3.5 text-tertiary" />} title="Typical run time"
+        badge={<span className="rounded bg-surface-container-high px-1.5 py-0.5 font-mono text-label-code text-on-surface-variant" title="95% of tasks finish faster than this">slowest: {formatMs(p95)}</span>}
+        value={formatMs(p50)} sub={`median of ${durs.length} runs`}>
         <div className="flex h-9 items-end gap-1" aria-label="Last five runtimes">
           {recent.map((t) => (
             <span key={t.id} title={formatMs(t.duration_ms)}
@@ -98,7 +98,7 @@ export function MetricCards({ rows }: { rows: TaskSummaryRow[] }) {
         </div>
       </Card>
 
-      <Card icon={<Cpu className="h-3.5 w-3.5 text-primary" />} title="Active Tasks"
+      <Card icon={<Cpu className="h-3.5 w-3.5 text-primary" />} title="Running now"
         badge={<span className={cx("inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-label-code", running ? "bg-secondary/10 text-secondary" : "bg-primary/10 text-primary")}>
           <span className={cx("h-1.5 w-1.5 rounded-full", running ? "animate-pulse bg-secondary" : "bg-primary")} />{running ? "Busy" : "Idle"}</span>}
         value={slots ? `${running} / ${slots}` : String(running)} sub={slots ? <>Slots in use: <span className="font-medium text-primary">{Math.round((running / slots) * 100)}%</span></> : "backend limits unavailable"}>

@@ -19,6 +19,7 @@ from app.core.config import settings
 from app.core.security import UnsafeURLError, redact, validate_target_url
 from app.database import db
 from app.orchestrator.cli_manager import run_cli
+from app.orchestrator.recovery import decide_recovery
 from app.orchestrator.tool_registry import display_command, tool_for_intent
 from app.services.output_processor import build_extracted_data, process_output
 
@@ -174,11 +175,8 @@ class TaskManager:
         await run.emit("command", tool=tool.name, command=command, argv=argv[1:], timeout_s=tool.timeout_seconds)
         await run.stage("prepare", "done", f"Tool `{tool.name}` with {len(argv) - 3} validated arguments")
 
-        # 4. Execute (bounded concurrency, timeout, cancellation, live stderr)
-        await run.stage("execute", "running", "Waiting for a free worker..." if self.semaphore.locked() else None)
-        if run.cancel_event.is_set():
-            return await self._cancelled(run, plan)
-
+        # 4. Execute (bounded concurrency, timeout, cancellation, live stderr), with one bounded
+        #    observe -> reason -> act recovery for transient / size-related failures (see recovery.py).
         async def on_stderr(line: str) -> None:
             try:
                 ev = json.loads(line)
@@ -190,15 +188,37 @@ class TaskManager:
         async def on_start(pid: int) -> None:
             await run.emit("process", state="started", pid=pid)
 
-        async with self.semaphore:
-            proc = await run_cli(argv, cwd=tool.cwd, timeout=tool.timeout_seconds, on_stderr=on_stderr,
-                                 cancel_event=run.cancel_event, on_start=on_start)
-        run.record.update(exit_code=proc.exit_code, duration_ms=proc.duration_ms)
-        await run.emit("process", state="exited", pid=proc.pid, exit_code=proc.exit_code, duration_ms=proc.duration_ms,
-                       timed_out=proc.timed_out, cancelled=proc.cancelled, stdout_bytes=len(proc.stdout.encode()))
-        if proc.cancelled:
-            return await self._cancelled(run, plan)
-        exec_detail = f"exit code {proc.exit_code} in {proc.duration_ms / 1000:.1f}s"
+        attempt = 1
+        recovered_from: str | None = None
+        while True:
+            await run.stage("execute", "running", "Waiting for a free worker..." if self.semaphore.locked() else
+                            (f"Attempt {attempt}: reduced scope" if attempt > 1 else None))
+            if run.cancel_event.is_set():
+                return await self._cancelled(run, plan)
+            async with self.semaphore:
+                proc = await run_cli(argv, cwd=tool.cwd, timeout=tool.timeout_seconds, on_stderr=on_stderr,
+                                     cancel_event=run.cancel_event, on_start=on_start)
+            run.record.update(exit_code=proc.exit_code, duration_ms=proc.duration_ms)
+            await run.emit("process", state="exited", pid=proc.pid, exit_code=proc.exit_code, duration_ms=proc.duration_ms,
+                           timed_out=proc.timed_out, cancelled=proc.cancelled, stdout_bytes=len(proc.stdout.encode()))
+            if proc.cancelled:
+                return await self._cancelled(run, plan)
+            processed = process_output(proc)
+            recovery = decide_recovery(proc, processed, plan, attempt)
+            if recovery is None:
+                break
+            # Observation -> Thought -> Action, recorded as a real event so the UI can show the trace.
+            await run.emit("reasoning", attempt=attempt, observation=recovery.observation,
+                           thought=recovery.thought, action=recovery.action)
+            recovered_from = processed.error or recovery.observation
+            plan = recovery.plan
+            argv = tool.build_argv(plan)
+            command = display_command(argv)
+            run.record.update(command=command)
+            await run.emit("command", tool=tool.name, command=command, argv=argv[1:], timeout_s=tool.timeout_seconds)
+            attempt += 1
+
+        exec_detail = f"exit code {proc.exit_code} in {proc.duration_ms / 1000:.1f}s" + (f" (attempt {attempt})" if attempt > 1 else "")
         if proc.timed_out or proc.spawn_error:
             await run.stage("execute", "failed", proc.spawn_error or f"Timed out after {tool.timeout_seconds}s - process killed")
         else:
@@ -206,11 +226,10 @@ class TaskManager:
 
         # 5. Process + validate output
         await run.stage("process", "running")
-        processed = process_output(proc)
         execution = {
             "tool": tool.name, "command": command, "pid": proc.pid, "exit_code": proc.exit_code,
             "exit_meaning": processed.exit_meaning, "duration_ms": proc.duration_ms, "timed_out": proc.timed_out,
-            "stderr_lines": len(proc.stderr_lines), "stdout_bytes": len(proc.stdout.encode()),
+            "stderr_lines": len(proc.stderr_lines), "stdout_bytes": len(proc.stdout.encode()), "attempts": attempt,
         }
         if processed.status == "failed" or processed.crawl is None:
             await run.stage("process", "failed", processed.error)
@@ -219,6 +238,11 @@ class TaskManager:
                       "plan": plan.model_dump(), "execution": execution}
             await run.emit("result", result=result)
             return "failed", result, processed.error
+        if recovered_from:
+            # A reduced-scope result answers the request only partly: report it as partial, with the reason.
+            processed.status = "partial"
+            processed.error = (f"Recovered on attempt {attempt} with reduced scope (homepage only) "
+                               f"after the first run failed: {recovered_from[:200]}")
         crawl = processed.crawl
         data = build_extracted_data(crawl)
         await run.stage("process", "done" if processed.status == "completed" else "warning",

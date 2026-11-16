@@ -7,9 +7,13 @@ export interface Prefs {
   autoScroll: boolean;
   expandExecution: boolean;
   sidebarCollapsed: boolean;
+  /** first-run "how it works" guide was dismissed */
+  guideDismissed: boolean;
+  /** Live Run: show pipeline, terminal and process telemetry */
+  showTechnical: boolean;
 }
 
-const DEFAULTS: Prefs = { autoScroll: true, expandExecution: true, sidebarCollapsed: false };
+const DEFAULTS: Prefs = { autoScroll: true, expandExecution: true, sidebarCollapsed: false, guideDismissed: false, showTechnical: false };
 const PREFS_KEY = "taskpilot.prefs.v1";
 const SAVED_KEY = "taskpilot.saved.v1";
 

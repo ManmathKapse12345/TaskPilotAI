@@ -47,7 +47,22 @@ export interface Workspace {
   setSettingsOpen: (v: boolean) => void;
   draft: string;
   setDraft: (v: string) => void;
+
+  /** The current chat thread: tasks started (or reopened) in this conversation, oldest first. */
+  thread: ThreadItem[];
+  /** Replaces the thread with a single stored task (sidebar / ?task= deep link). */
+  openThread: (id: string) => void;
+  newChat: () => void;
+  /** Sends a message in the chat: adds the task, or an error item if the backend rejects it. */
+  send: (message: string) => Promise<string | null>;
+  /** Task whose Run Details slide-over is open. */
+  detailsId: string | null;
+  setDetailsId: (id: string | null) => void;
 }
+
+export type ThreadItem =
+  | { kind: "task"; id: string }
+  | { kind: "error"; key: string; prompt: string; title: string; text: string };
 
 const Ctx = createContext<Workspace | null>(null);
 
@@ -74,6 +89,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [submitting, setSubmitting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [thread, setThread] = useState<ThreadItem[]>([]);
+  const [detailsId, setDetailsId] = useState<string | null>(null);
 
   const streams = useRef<Record<string, EventSource>>({});
   const lastSeq = useRef<Record<string, number>>({});
@@ -133,7 +150,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         es.close();
         delete streams.current[id];
         refreshHistory();
-        if (ev.status === "failed") toast({ tone: "error", title: "Task failed", body: "Open Live CLI Execution for the reason." });
+        if (ev.status === "failed") toast({ tone: "error", title: "Task failed", body: "The chat shows the reason." });
         else if (ev.status === "partial") toast({ tone: "info", title: "Partial result", body: "Some pages could not be crawled." });
         else if (ev.status === "completed") toast({ tone: "success", title: "Task completed", body: "Verified output from the CLI is ready." });
       }
@@ -198,12 +215,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       unsave(id);
       setTasks((prev) => { const n = { ...prev }; delete n[id]; return n; });
       setActiveId((a) => (a === id ? null : a));
+      setThread((t) => t.filter((x) => !(x.kind === "task" && x.id === id)));
+      setDetailsId((d) => (d === id ? null : d));
       refreshHistory();
       toast({ tone: "success", title: "Task deleted" });
     } catch (err) {
       toast({ tone: "error", title: "Could not delete task", body: (err as Error).message });
     }
   }, [refreshHistory, toast, unsave]);
+
+  const openThread = useCallback((id: string) => {
+    setThread([{ kind: "task", id }]);
+    setActiveId(id);
+    setDetailsId(null);
+    ensureTask(id);
+  }, [ensureTask]);
+
+  const newChat = useCallback(() => { setThread([]); setActiveId(null); setDetailsId(null); }, []);
+
+  const send = useCallback(async (message: string) => {
+    try {
+      const id = await submit(message);
+      setThread((t) => [...t, { kind: "task", id }]);
+      return id;
+    } catch (e) {
+      const err = e as Error & { title?: string };
+      setThread((t) => [...t, { kind: "error", key: crypto.randomUUID(), prompt: message.trim(), title: err.title ?? "Request rejected", text: err.message }]);
+      return null;
+    }
+  }, [submit]);
 
   const toggleSave = useCallback((id: string) => {
     const was = saved.includes(id);
@@ -218,8 +258,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     submit, submitting, cancel, remove,
     saved, toggleSave, clearSaved, prefs, setPrefs,
     settingsOpen, setSettingsOpen, draft, setDraft,
+    thread, openThread, newChat, send, detailsId, setDetailsId,
   }), [health, healthError, latencyMs, pingHealth, history, historyLoaded, historyError, refreshHistory, tasks, loadErrors, activeId,
-    ensureTask, submit, submitting, cancel, remove, saved, toggleSave, clearSaved, prefs, setPrefs, settingsOpen, draft]);
+    ensureTask, submit, submitting, cancel, remove, saved, toggleSave, clearSaved, prefs, setPrefs, settingsOpen, draft,
+    thread, openThread, newChat, send, detailsId]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

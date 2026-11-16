@@ -35,6 +35,14 @@ export interface ProcessView {
   stdoutBytes?: number;
 }
 
+/** One step of the ReAct-style trace (Thought -> Action -> Observation), built only from real events. */
+export interface TraceStep {
+  kind: "thought" | "action" | "observation";
+  ts: number;
+  text: string;
+  tone?: "ok" | "warn" | "bad";
+}
+
 export interface TaskView {
   id: string;
   prompt: string;
@@ -48,11 +56,15 @@ export interface TaskView {
   startedAt?: number;
   endedAt?: number;
   finished: boolean;
+  /** Agent reasoning steps in order (see TraceStep). */
+  trace: TraceStep[];
+  /** Number of recoveries the agent performed. */
+  recoveries: number;
 }
 
 export function emptyTask(id: string, prompt: string): TaskView {
   return {
-    id, prompt, status: "queued", logs: [], finished: false,
+    id, prompt, status: "queued", logs: [], finished: false, trace: [], recoveries: 0,
     stages: STAGES.map((s) => ({ ...s, status: "pending" as StageStatus, detail: null })),
   };
 }
@@ -79,9 +91,24 @@ export function applyEvent(view: TaskView, ev: TaskEvent): TaskView {
       break;
     case "plan":
       v.plan = ev.plan;
+      v.trace = [...v.trace, {
+        kind: "thought", ts: ev.ts,
+        text: ev.plan.intent === "website_crawl"
+          ? `Intent is a website crawl of ${ev.plan.url}: up to ${ev.plan.max_pages} page(s), depth ${ev.plan.max_depth}, `
+            + `returning ${[ev.plan.wants_summary && "a summary", ev.plan.wants_json && "JSON"].filter(Boolean).join(" and ") || "data"} (parsed by ${ev.plan.interpreted_by}).`
+          : `No CLI action is needed: intent is "${ev.plan.intent}" (parsed by ${ev.plan.interpreted_by}).`,
+      }];
+      break;
+    case "reasoning":
+      v.recoveries = v.recoveries + 1;
+      v.trace = [...v.trace,
+        { kind: "observation", ts: ev.ts, text: ev.observation, tone: "bad" },
+        { kind: "thought", ts: ev.ts, text: ev.thought },
+      ];
       break;
     case "command":
       v.command = { tool: ev.tool, command: ev.command, timeout_s: ev.timeout_s, ts: ev.ts };
+      v.trace = [...v.trace, { kind: "action", ts: ev.ts, text: `Run approved CLI: ${ev.command}` }];
       break;
     case "process":
       v.process = ev.state === "started"
@@ -91,12 +118,29 @@ export function applyEvent(view: TaskView, ev: TaskEvent): TaskView {
             exitCode: ev.exit_code, durationMs: ev.duration_ms, timedOut: ev.timed_out,
             cancelled: ev.cancelled, stdoutBytes: ev.stdout_bytes,
           };
+      if (ev.state === "exited") {
+        const how = ev.cancelled ? "process killed (cancelled by user)" : ev.timed_out ? "process killed (time limit)" : `exit code ${ev.exit_code}`;
+        v.trace = [...v.trace, {
+          kind: "observation", ts: ev.ts, tone: ev.exit_code === 0 ? "ok" : ev.exit_code === 1 ? "warn" : "bad",
+          text: `PID ${ev.pid}: ${how} after ${((ev.duration_ms ?? 0) / 1000).toFixed(1)}s, ${ev.stdout_bytes ?? 0} bytes of JSON on stdout.`,
+        }];
+      }
       break;
     case "log":
       v.logs = [...v.logs, { ts: ev.ts, level: ev.level, msg: ev.msg, kind: ev.kind, stream: ev.stream }];
       break;
     case "result":
       v.result = ev.result;
+      if (ev.result.status !== "answered") {
+        const st = ev.result.data?.crawl_stats;
+        v.trace = [...v.trace, {
+          kind: "observation", ts: ev.ts,
+          tone: ev.result.status === "completed" ? "ok" : ev.result.status === "partial" ? "warn" : "bad",
+          text: st
+            ? `Output validated against the schema: ${st.pages_crawled} page(s) crawled, ${st.pages_failed} failed. Result: ${ev.result.status}.`
+            : `Result: ${ev.result.status}. ${ev.result.error ?? ev.result.message ?? ""}`.trim(),
+        }];
+      }
       break;
     case "done":
       v.status = ev.status;

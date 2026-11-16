@@ -72,7 +72,6 @@ export function SettingsDialog() {
       <SectionLabel className="mb-1">Preferences</SectionLabel>
       <div className="mb-5 divide-y divide-line">
         <Toggle label="Follow live output" hint="Keep the terminal scrolled to the newest line while a task runs." checked={prefs.autoScroll} onChange={(v) => setPrefs({ autoScroll: v })} />
-        <Toggle label="Open Live CLI after dispatch" hint="Jump to the execution view as soon as a task is accepted." checked={prefs.expandExecution} onChange={(v) => setPrefs({ expandExecution: v })} />
       </div>
 
       <SectionLabel className="mb-1">Saved results</SectionLabel>

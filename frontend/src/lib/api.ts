@@ -26,6 +26,8 @@ export interface Execution {
   timed_out: boolean;
   stderr_lines: number;
   stdout_bytes: number;
+  /** CLI runs for this task (2 when the agent recovered with a reduced scope). */
+  attempts?: number;
 }
 
 export interface Summary {
@@ -81,6 +83,7 @@ export type TaskEvent =
   | { seq: number; ts: number; type: "command"; tool: string; command: string; argv: string[]; timeout_s: number }
   | { seq: number; ts: number; type: "process"; state: "started" | "exited"; pid: number; exit_code?: number | null; duration_ms?: number; timed_out?: boolean; cancelled?: boolean; stdout_bytes?: number }
   | { seq: number; ts: number; type: "log"; level: string; msg: string; kind: string; stream: string }
+  | { seq: number; ts: number; type: "reasoning"; attempt: number; observation: string; thought: string; action: string }
   | { seq: number; ts: number; type: "result"; result: TaskResult }
   | { seq: number; ts: number; type: "done"; status: TaskStatus };
 
