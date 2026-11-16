@@ -179,13 +179,23 @@ backend/
   tests/
 frontend/
   src/app/page.tsx              chat + orchestration of SSE streams
-  src/components/               TaskCard, ResultTabs, JsonViewer, LogConsole, Sidebar, ui
-  src/lib/                      api.ts (typed client), taskState.ts (event reducer)
+  src/components/
+    layout/                     Sidebar (collapsible, history, saved, search), Header, SettingsDialog, Logo
+    chat/                       ChatInput (URL detection), WelcomeScreen, SuggestedTasks, MessageBubble
+    execution/                  ExecutionPanel, ExecutionTimeline (7 stages), ExecutionLogs (stdout/stderr/system)
+    results/                    ResultTabs, ResultOverview, SummaryView, ExtractedDataView, JsonViewer (tree + raw)
+    ui/                         primitives, Markdown, Toast, Dialog
+  src/lib/                      api.ts (typed client), taskState.ts (event reducer), prefs.ts (local preferences)
 ```
+
+The UI shows seven execution stages, and every one is driven by a real backend event. The backend's
+`execute` stage is split in two using the process events: **Launching CLI** ends when the `process: started`
+event arrives with a PID, and **Crawling website** ends with `process: exited` and its exit code. Nothing is simulated.
+Saved results and UI preferences are stored only in the browser (localStorage). Task data lives in the backend database.
 
 ## Technology stack & AI disclosure
 
-* **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4
+* **Frontend:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, Lucide icons
 * **Backend:** Python, FastAPI, Pydantic v2, SQLAlchemy 2, httpx
 * **CLI tool:** custom `taskpilot_cli` (httpx + BeautifulSoup4 + urllib.robotparser)
 * **Runtime AI service:** OpenAI API (`gpt-4.1-mini`), used for intent understanding and summarisation in the demo. Google Gemini is supported as an alternative, and without any key the app falls back to rule-based parsing and extractive summaries.

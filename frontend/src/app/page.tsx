@@ -1,50 +1,83 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Sidebar } from "@/components/Sidebar";
-import { TaskCard } from "@/components/TaskCard";
+import { AnswerMessage, ErrorMessage, UserMessage } from "@/components/chat/MessageBubble";
+import { ChatInput } from "@/components/chat/ChatInput";
+import type { Template } from "@/components/chat/SuggestedTasks";
+import { WelcomeScreen } from "@/components/chat/WelcomeScreen";
+import { ExecutionPanel } from "@/components/execution/ExecutionPanel";
+import { Header } from "@/components/layout/Header";
+import { SettingsDialog } from "@/components/layout/SettingsDialog";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { useToast } from "@/components/ui/Toast";
 import { api, type Health, type TaskEvent, type TaskSummaryRow } from "@/lib/api";
-import { applyEvent, emptyTask, replay, type TaskView } from "@/lib/taskState";
+import { usePrefs, useSaved } from "@/lib/prefs";
+import { FINISHED, applyEvent, emptyTask, hostOf, replay, type TaskView } from "@/lib/taskState";
 
-type Entry = { kind: "user"; key: string; text: string } | { kind: "task"; key: string; taskId: string } | { kind: "error"; key: string; text: string };
+type Entry =
+  | { kind: "user"; key: string; text: string }
+  | { kind: "task"; key: string; taskId: string }
+  | { kind: "error"; key: string; title: string; text: string; retry?: string };
 
-const EXAMPLES = [
-  "Crawl https://example.com, extract the important information, give me a summary, and return the extracted data in JSON format.",
-  "Crawl 5 pages of https://quotes.toscrape.com and summarise what the site offers, with JSON output.",
-  "Analyse only the homepage of https://www.python.org and find contact details and social links.",
-  "Summarise http://localhost:8080/admin",
-];
+function describeError(err: unknown): { title: string; text: string } {
+  const msg = (err as Error)?.message ?? String(err);
+  if (err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(msg)) {
+    return { title: "Backend unreachable", text: "TaskPilot could not reach the API. Check that the backend is running on the configured URL, then try again." };
+  }
+  if (/^429/.test(msg) || /too many|busy/i.test(msg)) return { title: "Backend is busy", text: msg };
+  return { title: "Request rejected", text: msg };
+}
 
 export default function Home() {
+  const toast = useToast();
+  const [prefs, setPrefs] = usePrefs();
+  const { saved, toggle: toggleSaved, remove: unsave, clear: clearSaved } = useSaved();
+
   const [entries, setEntries] = useState<Entry[]>([]);
   const [tasks, setTasks] = useState<Record<string, TaskView>>({});
   const [history, setHistory] = useState<TaskSummaryRow[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
   const [healthError, setHealthError] = useState(false);
   const [input, setInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [activeId, setActiveId] = useState<string | null>(null);
+
   const streams = useRef<Record<string, EventSource>>({});
   const lastSeq = useRef<Record<string, number>>({});
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scroller = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  /* ---------- data ---------- */
 
   const refreshHistory = useCallback(() => {
-    api.list().then(setHistory).catch(() => {});
+    api.list().then((rows) => { setHistory(rows); setHistoryLoaded(true); }).catch(() => setHistoryLoaded(true));
+  }, []);
+
+  const pingHealth = useCallback(() => {
+    api.health().then((h) => { setHealth(h); setHealthError(false); }).catch(() => setHealthError(true));
   }, []);
 
   useEffect(() => {
-    const ping = () => api.health().then((h) => { setHealth(h); setHealthError(false); }).catch(() => setHealthError(true));
-    ping();
+    pingHealth();
     refreshHistory();
-    const t = setInterval(ping, 15000);
+    const t = setInterval(pingHealth, 15000);
     const open = streams.current;
     return () => { clearInterval(t); Object.values(open).forEach((es) => es.close()); };
-  }, [refreshHistory]);
+  }, [pingHealth, refreshHistory]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [entries.length, tasks]);
+  /** Fallback when the live stream drops: load the stored task and replay its recorded events. */
+  const recover = useCallback(async (id: string) => {
+    try {
+      const d = await api.get(id);
+      if (FINISHED.includes(d.status)) {
+        setTasks((prev) => ({ ...prev, [id]: replay(id, d.prompt, d.events) }));
+        refreshHistory();
+      }
+    } catch { /* backend down; health indicator already shows it */ }
+  }, [refreshHistory]);
 
   const subscribe = useCallback((id: string) => {
     streams.current[id]?.close();
@@ -52,8 +85,9 @@ export default function Home() {
     const es = new EventSource(api.eventsUrl(id));
     streams.current[id] = es;
     es.onmessage = (msg) => {
-      const ev = JSON.parse(msg.data) as TaskEvent;
-      // The server replays from the start on reconnect - drop events we've already applied.
+      let ev: TaskEvent;
+      try { ev = JSON.parse(msg.data) as TaskEvent; } catch { return; }
+      // The server replays from the start on reconnect, so drop events that were already applied.
       if (typeof ev.seq === "number") {
         if (ev.seq <= lastSeq.current[id]) return;
         lastSeq.current[id] = ev.seq;
@@ -63,20 +97,27 @@ export default function Home() {
         es.close();
         delete streams.current[id];
         refreshHistory();
+        if (ev.status === "failed") toast({ tone: "error", title: "Task failed", body: "See the execution panel for the reason." });
+        else if (ev.status === "partial") toast({ tone: "info", title: "Partial result", body: "Some pages could not be crawled." });
+        else if (ev.status === "completed") toast({ tone: "success", title: "Task completed", body: "Verified output from the CLI is ready." });
       }
     };
     es.onerror = () => {
-      if (es.readyState === EventSource.CLOSED) delete streams.current[id];
+      if (es.readyState === EventSource.CLOSED) {
+        delete streams.current[id];
+        recover(id);
+      }
     };
-  }, [refreshHistory]);
+  }, [refreshHistory, recover, toast]);
+
+  /* ---------- actions ---------- */
 
   const submit = useCallback(async (text: string) => {
     const message = text.trim();
     if (!message || submitting) return;
     setSubmitting(true);
     setInput("");
-    const userKey = crypto.randomUUID();
-    setEntries((e) => [...e, { kind: "user", key: userKey, text: message }]);
+    setEntries((e) => [...e, { kind: "user", key: crypto.randomUUID(), text: message }]);
     try {
       const { task_id } = await api.submit(message);
       setTasks((prev) => ({ ...prev, [task_id]: emptyTask(task_id, message) }));
@@ -85,106 +126,154 @@ export default function Home() {
       subscribe(task_id);
       refreshHistory();
     } catch (err) {
-      setEntries((e) => [...e, { kind: "error", key: crypto.randomUUID(), text: `Could not reach the TaskPilot backend: ${(err as Error).message}` }]);
+      const { title, text: body } = describeError(err);
+      setEntries((e) => [...e, { kind: "error", key: crypto.randomUUID(), title, text: body, retry: message }]);
+      if (err instanceof TypeError) setHealthError(true);
     } finally {
       setSubmitting(false);
     }
   }, [submitting, subscribe, refreshHistory]);
 
   const openTask = useCallback(async (id: string) => {
-    setSidebarOpen(false);
+    setMobileOpen(false);
     try {
       const d = await api.get(id);
-      const running = !["completed", "partial", "failed", "cancelled", "answered"].includes(d.status);
+      const running = !FINISHED.includes(d.status);
       setTasks((prev) => ({ ...prev, [id]: running ? emptyTask(id, d.prompt) : replay(id, d.prompt, d.events) }));
       setEntries([{ kind: "user", key: `u-${id}`, text: d.prompt }, { kind: "task", key: id, taskId: id }]);
       setActiveId(id);
       if (running) subscribe(id);
+      requestAnimationFrame(() => scroller.current?.scrollTo({ top: 0 }));
     } catch (err) {
-      setEntries([{ kind: "error", key: crypto.randomUUID(), text: `Could not load task: ${(err as Error).message}` }]);
+      toast({ tone: "error", title: "Could not open task", body: describeError(err).text });
     }
-  }, [subscribe]);
+  }, [subscribe, toast]);
 
   const deleteTask = useCallback(async (id: string) => {
     try {
       await api.remove(id);
-      if (activeId === id) setEntries([]);
+      unsave(id);
+      if (activeId === id) { setEntries([]); setActiveId(null); }
       refreshHistory();
+      toast({ tone: "success", title: "Task deleted" });
     } catch (err) {
-      alert((err as Error).message);
+      toast({ tone: "error", title: "Could not delete task", body: (err as Error).message });
     }
-  }, [activeId, refreshHistory]);
+  }, [activeId, refreshHistory, toast, unsave]);
 
-  const newTask = () => { setEntries([]); setActiveId(null); setSidebarOpen(false); };
+  const toggleSave = useCallback((id: string) => {
+    const was = saved.includes(id);
+    toggleSaved(id);
+    toast({ tone: "success", title: was ? "Removed from saved results" : "Saved to your results" });
+  }, [saved, toggleSaved, toast]);
+
+  const newTask = useCallback(() => {
+    setEntries([]); setActiveId(null); setMobileOpen(false); setInput("");
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, []);
+
+  const pickTemplate = useCallback((t: Template) => {
+    setInput(t.prompt);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      const i = t.prompt.indexOf(t.url);
+      if (i >= 0) el.setSelectionRange(i, i + t.url.length); // type to replace the URL
+    });
+  }, []);
+
+  /* ---------- keyboard ---------- */
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement)?.closest("input, textarea, [contenteditable]");
+      if (e.altKey && e.key.toLowerCase() === "n") { e.preventDefault(); newTask(); }
+      else if (e.key === "/" && !typing) { e.preventDefault(); inputRef.current?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [newTask]);
+
+  /* ---------- auto-scroll ---------- */
+
+  useEffect(() => {
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: "smooth" });
+  }, [entries.length]);
+
+  const active = activeId ? tasks[activeId] : undefined;
+  const activeRunning = !!active && !active.finished;
+  const activeSig = active ? `${active.logs.length}-${active.stages.map((s) => s.status).join()}-${active.finished}` : "";
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || !prefs.autoScroll || !activeSig) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < 240;
+    if (near || activeRunning) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [activeSig, activeRunning, prefs.autoScroll]);
+
+  /* ---------- render ---------- */
+
+  const disabledReason = healthError ? "Backend offline" : null;
+  const composerProps = { value: input, onChange: setInput, onSubmit: () => submit(input), submitting, disabledReason, inputRef };
+  const title = active ? (active.plan?.url ? hostOf(active.plan.url) : active.prompt.slice(0, 60)) : entries.length ? "Conversation" : "New task";
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-slate-950 text-slate-200">
-      <Sidebar history={history} activeId={activeId} health={health} healthError={healthError}
-        onNew={newTask} onOpen={openTask} onDelete={deleteTask} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+    <div className="flex h-dvh overflow-hidden bg-canvas text-fg">
+      <Sidebar
+        history={history} historyLoaded={historyLoaded} saved={saved} activeId={activeId}
+        health={health} healthError={healthError}
+        collapsed={prefs.sidebarCollapsed} mobileOpen={mobileOpen}
+        onToggleCollapse={() => setPrefs({ sidebarCollapsed: !prefs.sidebarCollapsed })}
+        onMobileClose={() => setMobileOpen(false)}
+        onNew={newTask} onOpen={openTask} onDelete={deleteTask} onToggleSave={toggleSave}
+        onOpenSettings={() => { setSettingsOpen(true); setMobileOpen(false); }}
+      />
 
       <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-3 border-b border-slate-800 px-4 py-3 md:hidden">
-          <button onClick={() => setSidebarOpen(true)} className="rounded-md px-2 py-1 text-slate-300 ring-1 ring-slate-700">☰</button>
-          <span className="text-sm font-semibold">TaskPilot AI</span>
-        </header>
+        <Header title={title} status={active?.status} health={health} healthError={healthError}
+          sidebarCollapsed={prefs.sidebarCollapsed} onMenu={() => setMobileOpen(true)}
+          onExpandSidebar={() => setPrefs({ sidebarCollapsed: false })} onNew={newTask} onSettings={() => setSettingsOpen(true)} />
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6">
-            {entries.length === 0 && (
-              <div className="pt-[8vh] text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 text-2xl font-bold text-white shadow-lg shadow-indigo-500/20">T</div>
-                <h1 className="text-2xl font-semibold text-white">What should I execute?</h1>
-                <p className="mx-auto mt-2 max-w-xl text-sm text-slate-400">
-                  Describe a task in plain English. TaskPilot interprets it, runs an approved CLI tool on the backend,
-                  streams the live execution and returns a verified summary and JSON.
-                </p>
-                <div className="mx-auto mt-8 grid max-w-3xl gap-2 text-left sm:grid-cols-2">
-                  {EXAMPLES.map((ex, i) => (
-                    <button key={ex} onClick={() => submit(ex)}
-                      className="rounded-lg border border-slate-800 bg-slate-900/50 p-3 text-xs text-slate-300 transition hover:border-indigo-500/50 hover:bg-slate-900">
-                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wider text-slate-500">
-                        {i === 3 ? "Security edge case" : i === 0 ? "Mandatory demo" : "Example"}
-                      </span>
-                      {ex}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+        <div ref={scroller} className="flex-1 overflow-y-auto overflow-x-hidden">
+          {entries.length === 0 ? (
+            <WelcomeScreen health={health} busy={submitting || healthError} onPick={pickTemplate} onRun={submit}
+              composer={<ChatInput {...composerProps} variant="hero" autoFocus />} />
+          ) : (
+            <div className="mx-auto w-full max-w-[920px] space-y-6 px-3 py-6 sm:px-6">
+              {entries.map((e) => {
+                if (e.kind === "user") return <UserMessage key={e.key} text={e.text} />;
+                if (e.kind === "error") return <ErrorMessage key={e.key} title={e.title} body={e.text} onRetry={e.retry ? () => submit(e.retry!) : undefined} />;
+                const t = tasks[e.taskId];
+                if (!t) return null;
+                if (t.finished && t.result?.status === "answered") {
+                  return <AnswerMessage key={e.key} text={t.result.message ?? ""}
+                    meta={<>No CLI execution needed · intent <span className="font-mono">{t.result.plan?.intent}</span> · parsed by {t.result.plan?.interpreted_by === "llm" ? "LLM" : "rules"}</>} />;
+                }
+                return (
+                  <ExecutionPanel key={e.key} task={t} saved={saved.includes(t.id)} defaultExpanded={prefs.expandExecution}
+                    onCancel={() => api.cancel(t.id).then(() => undefined)}
+                    onRetry={() => submit(t.prompt)}
+                    onToggleSave={() => toggleSave(t.id)} />
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-            {entries.map((e) =>
-              e.kind === "user" ? (
-                <div key={e.key} className="flex justify-end">
-                  <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-indigo-500/90 px-4 py-2.5 text-sm text-white">{e.text}</div>
-                </div>
-              ) : e.kind === "error" ? (
-                <div key={e.key} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{e.text}</div>
-              ) : tasks[e.taskId] ? (
-                <TaskCard key={e.key} task={tasks[e.taskId]}
-                  onCancel={() => api.cancel(e.taskId).catch(() => {})}
-                  onRetry={() => submit(tasks[e.taskId].prompt)} />
-              ) : null,
-            )}
-            <div ref={bottomRef} />
+        {entries.length > 0 && (
+          <div className="shrink-0 bg-gradient-to-t from-canvas via-canvas to-canvas/0 px-3 pb-3 pt-2 sm:px-6 sm:pb-4">
+            <div className="mx-auto max-w-[920px]">
+              <ChatInput {...composerProps} />
+              <p className="mt-2 text-center text-[11px] text-subtle">Only approved CLI tools run. Results come from real process output, never from the model alone.</p>
+            </div>
           </div>
-        </div>
-
-        <div className="border-t border-slate-800 bg-slate-950/80 px-4 py-3 backdrop-blur">
-          <form className="mx-auto flex max-w-4xl items-end gap-2" onSubmit={(ev) => { ev.preventDefault(); submit(input); }}>
-            <textarea value={input} onChange={(ev) => setInput(ev.target.value)} rows={1} maxLength={2000}
-              onKeyDown={(ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); submit(input); } }}
-              placeholder="e.g. Crawl https://example.com, summarise it and return JSON…"
-              className="max-h-40 min-h-[44px] flex-1 resize-y rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none" />
-            <button type="submit" disabled={!input.trim() || submitting}
-              className="h-[44px] rounded-xl bg-indigo-500 px-5 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:opacity-40">
-              {submitting ? "…" : "Run"}
-            </button>
-          </form>
-          <p className="mx-auto mt-1.5 max-w-4xl text-[11px] text-slate-600">
-            Only approved CLI tools run · public URLs only · robots.txt respected · Enter to run, Shift+Enter for a new line
-          </p>
-        </div>
+        )}
       </main>
+
+      <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)}
+        health={health} healthError={healthError} onRecheck={() => { pingHealth(); toast({ tone: "info", title: "Checking backend…" }); }}
+        prefs={prefs} setPrefs={setPrefs} savedCount={saved.length}
+        onClearSaved={() => { clearSaved(); toast({ tone: "success", title: "Saved results cleared" }); }} />
     </div>
   );
 }
