@@ -9,6 +9,11 @@ structured JSON. It also reports partial results, failures, timeouts and cancell
 
 Built for **BuildSprint Round 2: CLI-Driven AI Chat Execution for Complex Tasks**.
 
+**Live demo: https://taskpilot-ai-pi.vercel.app**
+(frontend on Vercel, backend API on Render: https://taskpilot-api-5sl6.onrender.com/api/health).
+The backend runs on Render's free tier, which sleeps when idle, so the **first request can take up to a minute** while it wakes up.
+Click the **Quickstart** card and then **Run Task** to run the mandatory example. To run it locally instead, see [Setup](#setup).
+
 ---
 
 ## Architecture
