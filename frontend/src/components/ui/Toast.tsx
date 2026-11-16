@@ -14,7 +14,7 @@ export function useToast() {
 }
 
 const ICON = { success: CheckCircle2, error: AlertCircle, info: Info };
-const TONE = { success: "text-ok", error: "text-bad", info: "text-accent" };
+const TONE = { success: "text-primary", error: "text-error", info: "text-primary" };
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -33,13 +33,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           const Icon = ICON[t.tone];
           return (
             <div key={t.id} role="status"
-              className="animate-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border border-line-strong bg-raised/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur">
+              className="animate-toast-in pointer-events-auto flex w-full max-w-sm items-start gap-3 rounded-xl border border-line-strong bg-surface-container/95 px-3.5 py-3 shadow-2xl shadow-black/40 backdrop-blur">
               <Icon className={cx("mt-0.5 h-4 w-4 shrink-0", TONE[t.tone])} />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-fg">{t.title}</div>
-                {t.body && <div className="mt-0.5 break-words text-xs text-muted">{t.body}</div>}
+                <div className="text-sm font-medium text-on-surface">{t.title}</div>
+                {t.body && <div className="mt-0.5 break-words text-xs text-on-surface-variant">{t.body}</div>}
               </div>
-              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="text-subtle hover:text-fg"><X className="h-3.5 w-3.5" /></button>
+              <button onClick={() => dismiss(t.id)} aria-label="Dismiss" className="text-outline hover:text-on-surface"><X className="h-3.5 w-3.5" /></button>
             </div>
           );
         })}

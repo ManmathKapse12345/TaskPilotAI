@@ -5,8 +5,8 @@ import { cx } from "./primitives";
 export function Markdown({ text, className }: { text: string; className?: string }) {
   const inline = (s: string, key: string): ReactNode[] =>
     s.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*]*\*)/g).map((part, i) => {
-      if (part.startsWith("**") && part.endsWith("**")) return <strong key={key + i} className="font-semibold text-fg">{part.slice(2, -2)}</strong>;
-      if (part.startsWith("`") && part.endsWith("`")) return <code key={key + i} className="rounded bg-raised px-1 py-0.5 font-mono text-[0.85em] text-accent">{part.slice(1, -1)}</code>;
+      if (part.startsWith("**") && part.endsWith("**")) return <strong key={key + i} className="font-semibold text-on-surface">{part.slice(2, -2)}</strong>;
+      if (part.startsWith("`") && part.endsWith("`")) return <code key={key + i} className="rounded bg-surface-container px-1 py-0.5 font-mono text-[0.85em] text-primary">{part.slice(1, -1)}</code>;
       if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={key + i}>{part.slice(1, -1)}</em>;
       return <Fragment key={key + i}>{part}</Fragment>;
     });
@@ -19,13 +19,13 @@ export function Markdown({ text, className }: { text: string; className?: string
           return (
             <ul key={bi} className="space-y-1.5">
               {lines.map((l, li) => (
-                <li key={li} className="flex gap-2.5"><span className="mt-[0.6em] h-1 w-1 shrink-0 rounded-full bg-subtle" />
+                <li key={li} className="flex gap-2.5"><span className="mt-[0.6em] h-1 w-1 shrink-0 rounded-full bg-outline" />
                   <span>{inline(l.replace(/^\s*[-*•]\s+/, ""), `${bi}-${li}-`)}</span></li>
               ))}
             </ul>
           );
         }
-        if (/^#{1,4}\s/.test(block)) return <h4 key={bi} className="font-semibold text-fg">{inline(block.replace(/^#{1,4}\s/, ""), `${bi}-`)}</h4>;
+        if (/^#{1,4}\s/.test(block)) return <h4 key={bi} className="font-semibold text-on-surface">{inline(block.replace(/^#{1,4}\s/, ""), `${bi}-`)}</h4>;
         return <p key={bi}>{lines.map((l, li) => <Fragment key={li}>{li > 0 && <br />}{inline(l, `${bi}-${li}-`)}</Fragment>)}</p>;
       })}
     </div>

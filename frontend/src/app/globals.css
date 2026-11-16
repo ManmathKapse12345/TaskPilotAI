@@ -1,72 +1,139 @@
 @import "tailwindcss";
 
 /*
- * TaskPilot design tokens.
- * One accent (periwinkle), status colours reserved for state only.
- * Usage: bg-canvas, bg-panel, bg-surface, bg-raised, border-line, text-fg, text-muted, text-subtle, text-accent ...
+ * TaskPilot AI — Obsidian Synthetics design tokens (source: Stitch "AI Agent Execution Workspace").
+ * Surfaces step up in lightness: lowest < surface < low < container < high < highest.
+ * Emerald = primary/success, cyan = secondary/live, indigo = tertiary/AI, error = failure.
  */
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
 
-  --color-canvas: #0c0d10;      /* app background */
-  --color-panel: #111216;       /* sidebar, header */
-  --color-surface: #16171c;     /* cards */
-  --color-raised: #1c1d23;      /* inputs, hovered rows, chips */
-  --color-overlay: #23242b;     /* active rows, pressed */
-  --color-line: #ffffff12;      /* default border */
-  --color-line-strong: #ffffff1f;
+  --color-surface: #0b1326;
+  --color-surface-container-lowest: #060e20;
+  --color-surface-container-low: #131b2e;
+  --color-surface-container: #171f33;
+  --color-surface-container-high: #222a3d;
+  --color-surface-container-highest: #2d3449;
+  --color-surface-bright: #31394d;
+  --color-terminal: #050b17;
 
-  --color-fg: #ececf1;          /* primary text */
-  --color-muted: #a1a1ad;       /* secondary text */
-  --color-subtle: #6b6b78;      /* tertiary text, meta */
+  --color-on-surface: #dae2fd;
+  --color-on-surface-variant: #bbcabf;
+  --color-outline: #86948a;
+  --color-outline-variant: #3c4a42;
 
-  --color-accent: #8b9bff;
-  --color-accent-strong: #6f80f5;
-  --color-accent-soft: #8b9bff1f;
+  --color-primary: #4edea3;
+  --color-primary-container: #10b981;
+  --color-on-primary: #003824;
+  --color-on-primary-container: #00422b;
 
-  --color-ok: #4ade80;
+  --color-secondary: #4cd7f6;
+  --color-secondary-container: #03b5d3;
+  --color-tertiary: #c0c1ff;
+  --color-tertiary-container: #6366f1;
+
+  --color-error: #ffb4ab;
+  --color-error-container: #93000a;
+  --color-on-error-container: #ffdad6;
   --color-warn: #fbbf24;
-  --color-bad: #f87171;
 
-  --radius-card: 14px;
+  /* hairlines (Stitch is mostly borderless; these are reserved for dividers) */
+  --color-line: #ffffff0f;
+  --color-line-strong: #ffffff1a;
+
+  /* 4px design language */
+  --radius-xs: 0.125rem;
+  --radius-sm: 0.125rem;
+  --radius: 0.25rem;
+  --radius-md: 0.25rem;
+  --radius-lg: 0.25rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
+
+  /* type scale */
+  --text-headline-xl: 36px;
+  --text-headline-xl--line-height: 44px;
+  --text-headline-xl--letter-spacing: -0.03em;
+  --text-headline-lg: 24px;
+  --text-headline-lg--line-height: 32px;
+  --text-headline-lg--letter-spacing: -0.02em;
+  --text-headline-sm: 18px;
+  --text-headline-sm--line-height: 24px;
+  --text-headline-sm--letter-spacing: -0.01em;
+  --text-body-lg: 15px;
+  --text-body-lg--line-height: 22px;
+  --text-body-md: 13px;
+  --text-body-md--line-height: 20px;
+  --text-body-sm: 12px;
+  --text-body-sm--line-height: 18px;
+  --text-label-md: 12px;
+  --text-label-md--line-height: 16px;
+  --text-label-md--letter-spacing: 0.01em;
+  --text-code-lg: 13px;
+  --text-code-lg--line-height: 20px;
+  --text-code-lg--letter-spacing: -0.01em;
+  --text-code-sm: 11px;
+  --text-code-sm--line-height: 16px;
+  --text-label-code: 10px;
+  --text-label-code--line-height: 14px;
+  --text-label-code--letter-spacing: 0.05em;
 }
 
 html,
 body {
-  background: var(--color-canvas);
-  color: var(--color-fg);
+  background: var(--color-surface);
+  color: var(--color-on-surface);
   color-scheme: dark;
 }
 
 body {
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "ss01", "cv11";
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 20px;
+  overscroll-behavior: none;
 }
 
 ::selection {
-  background: #8b9bff40;
+  background: #10b9814d;
+  color: var(--color-primary);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2b33 transparent;
+  scrollbar-color: #2d3449 transparent;
 }
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2a2b33;
-  border-radius: 8px;
+  background: #2d3449;
+  border-radius: 4px;
 }
 
 @layer base {
   /* text fields show focus through their container instead */
-  :focus-visible:not(textarea, input) {
-    outline: 2px solid var(--color-accent);
+  :focus-visible:not(textarea, input, select) {
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
   }
+  kbd {
+    font-family: var(--font-mono);
+  }
+  /* let grid cells shrink below their content so truncated text never forces horizontal scroll */
+  .grid > * {
+    min-width: 0;
+  }
+}
+
+@layer utilities {
+  .glow-primary { box-shadow: 0 0 14px -3px rgba(16, 185, 129, 0.4); }
+  .glow-primary-lg { box-shadow: 0 0 20px -3px rgba(16, 185, 129, 0.45); }
+  .glow-nav { box-shadow: 0 0 10px -3px rgba(16, 185, 129, 0.2); }
+  .glow-secondary { box-shadow: 0 0 12px -2px rgba(6, 182, 212, 0.25); }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
 }
 
 @keyframes fade-up {
@@ -77,10 +144,6 @@ body {
   from { opacity: 0; transform: translateY(8px) scale(0.98); }
   to { opacity: 1; transform: none; }
 }
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
 @keyframes blink {
   50% { opacity: 0; }
 }
@@ -88,11 +151,6 @@ body {
 .animate-fade-up { animation: fade-up 0.28s ease-out both; }
 .animate-toast-in { animation: toast-in 0.2s ease-out both; }
 .animate-blink { animation: blink 1s step-end infinite; }
-.shimmer-line {
-  background: linear-gradient(90deg, transparent, #8b9bff55, transparent);
-  background-size: 200% 100%;
-  animation: shimmer 1.6s linear infinite;
-}
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
