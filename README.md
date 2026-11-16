@@ -21,29 +21,29 @@ Click the **Quickstart** card and then **Run Task** to run the mandatory example
 **System overview:** what talks to what.
 
 ```mermaid
-flowchart LR
-    USER(["User"]) --> FE["Chat UI<br/>Next.js · Vercel"]
-    FE -->|"POST /api/chat"| BE["Orchestrator<br/>FastAPI · Render"]
-    BE -.->|"live events (SSE)"| FE
-    BE <-->|"intent + summary"| LLM["OpenAI<br/>gpt-4.1-mini"]
-    BE ==>|"fixed argv · shell=False"| CLI["Crawler CLI<br/>taskpilot_cli"]
-    CLI -.->|"stdout JSON · stderr progress"| BE
-    CLI --> WEB(["Public website"])
-    BE --> DB[("History<br/>SQLite / Postgres")]
+flowchart TB
+    USER([User]) --> FE[Chat UI<br/>Next.js on Vercel]
+    FE -->|POST /api/chat| BE[Orchestrator<br/>FastAPI on Render]
+    BE -.->|Live events: SSE| FE
+    BE <-->|Intent and summary| LLM[OpenAI<br/>gpt-4.1-mini]
+    BE -->|Approved argv<br/>shell disabled| CLI[Crawler CLI<br/>taskpilot_cli]
+    CLI -.->|JSON output<br/>progress logs| BE
+    CLI --> WEB([Public website])
+    BE --> DB[(History<br/>SQLite or Postgres)]
 ```
 
 **Request pipeline:** what happens to one message inside the backend.
 
 ```mermaid
-flowchart LR
-    A["1 · Understand<br/>LLM → TaskPlan"] --> B["2 · Validate URL<br/>DNS · no private IPs"]
-    B --> C["3 · Build command<br/>allow-listed argv"]
-    C --> D["4 · Run CLI<br/>timeout · cancel"]
-    D --> E["5 · Check output<br/>schema + exit code"]
-    E --> F{"Transient<br/>failure?"}
-    F -->|"no"| G["6 · Summarise<br/>captured data only"]
-    F -.->|"yes · retry once,<br/>homepage only"| C
-    B -.->|"unsafe"| X["Blocked reply<br/>no process started"]
+flowchart TB
+    A[1. Understand<br/>Create TaskPlan] --> B[2. Validate URL<br/>DNS and public IP checks]
+    B --> C[3. Build command<br/>Allow-listed arguments]
+    C --> D[4. Run CLI<br/>Timeout and cancellation]
+    D --> E[5. Check output<br/>Schema and exit code]
+    E --> F{Transient failure?}
+    F -->|No| G[6. Summarise<br/>Captured data only]
+    F -.->|Yes: retry once<br/>Homepage only| C
+    B -.->|Unsafe URL| X[Blocked reply<br/>Process not started]
 ```
 
 | Step | Component | File |
