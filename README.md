@@ -18,33 +18,45 @@ Click the **Quickstart** card and then **Run Task** to run the mandatory example
 
 ## Architecture
 
+**System overview:** what talks to what.
+
+```mermaid
+flowchart LR
+    USER(["User"]) --> FE["Chat UI<br/>Next.js · Vercel"]
+    FE -->|"POST /api/chat"| BE["Orchestrator<br/>FastAPI · Render"]
+    BE -.->|"live events (SSE)"| FE
+    BE <-->|"intent + summary"| LLM["OpenAI<br/>gpt-4.1-mini"]
+    BE ==>|"fixed argv · shell=False"| CLI["Crawler CLI<br/>taskpilot_cli"]
+    CLI -.->|"stdout JSON · stderr progress"| BE
+    CLI --> WEB(["Public website"])
+    BE --> DB[("History<br/>SQLite / Postgres")]
 ```
- ┌───────────────────────────── Next.js 16 + TypeScript + Tailwind ──────────────────────────────┐
- │  Chat UI · live run card & Run details (steps, command, PID, exit code, logs)                │
- │  Result in chat: Summary · Extracted data · Valid JSON (copy/download) · Reasoning trace       │
- │  Past chats & history · Stop · Retry · honest blocked / partial / failed replies               │
- └──────────────┬────────────────────────────────────────────────▲───────────────────────────────┘
-   POST /api/chat│                       GET /api/tasks/{id}/events (Server-Sent Events)
-                 ▼                                                │
- ┌────────────────────────────────────── FastAPI backend ───────────────────────────────────────┐
- │ 1 Intent engine   app/ai/intent_engine.py   LLM (Gemini/OpenAI) → Pydantic TaskPlan,          │
- │                                             rule-based fallback, URL must come from user text  │
- │ 2 Validation      app/core/security.py      URL syntax, DNS → block private/loopback IPs      │
- │ 3 Tool registry   app/orchestrator/tool_registry.py  allow-list → fixed argv (no shell)        │
- │ 4 CLI manager     app/orchestrator/cli_manager.py    Popen(shell=False), minimal env,          │
- │                                             live stderr, timeout kill, cancel kill            │
- │ 5 Output processor app/services/output_processor.py  JSON parse + Pydantic schema + exit code │
- │                                             → completed / partial / failed / cancelled        │
- │ 6 Summarizer      app/ai/summarizer.py      LLM over *untrusted* crawled data, or extractive  │
- │ History           app/database/db.py        SQLAlchemy (SQLite default, Postgres via URL)     │
- └──────────────┬────────────────────────────────────────────────▲──────────────────────────────┘
-                │ python -m taskpilot_cli crawl --url=… --max-pages=… …   stdout: JSON result
-                ▼                                                │ stderr: JSON-lines progress
- ┌──────────────────────── taskpilot_cli (approved CLI tool: site-crawler) ───────────────────────┐
- │ httpx + BeautifulSoup · robots.txt · same-site BFS · page/depth/time/size limits ·             │
- │ SSRF check on every URL and every redirect hop · exit codes 0/1/2/3/4/5                        │
- └────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+**Request pipeline:** what happens to one message inside the backend.
+
+```mermaid
+flowchart LR
+    A["1 · Understand<br/>LLM → TaskPlan"] --> B["2 · Validate URL<br/>DNS · no private IPs"]
+    B --> C["3 · Build command<br/>allow-listed argv"]
+    C --> D["4 · Run CLI<br/>timeout · cancel"]
+    D --> E["5 · Check output<br/>schema + exit code"]
+    E --> F{"Transient<br/>failure?"}
+    F -->|"no"| G["6 · Summarise<br/>captured data only"]
+    F -.->|"yes · retry once,<br/>homepage only"| C
+    B -.->|"unsafe"| X["Blocked reply<br/>no process started"]
 ```
+
+| Step | Component | File |
+|---|---|---|
+| 1 | Intent engine (LLM → `TaskPlan`, rule-based fallback; the URL must come from the user's text) | `backend/app/ai/intent_engine.py` |
+| 2 | URL validation (syntax, DNS, private/loopback IPs blocked) | `backend/app/core/security.py` |
+| 3 | Tool registry (allow-list → fixed argv, no shell) | `backend/app/orchestrator/tool_registry.py` |
+| 4 | CLI manager (`Popen(shell=False)`, stripped env, live stderr, timeout and cancel kill) | `backend/app/orchestrator/cli_manager.py` |
+| 5 | Output processor (JSON + Pydantic schema + exit code → completed / partial / failed / cancelled) | `backend/app/services/output_processor.py` |
+| ↺ | Recovery policy (observe → reason → act, one reduced-scope retry) | `backend/app/orchestrator/recovery.py` |
+| 6 | Summarizer (LLM over *untrusted* crawled data, or extractive fallback) | `backend/app/ai/summarizer.py` |
+| – | History (SQLAlchemy; SQLite by default, Postgres via URL) | `backend/app/database/db.py` |
+| – | Crawler CLI (exit codes 0–5) | `backend/taskpilot_cli/` |
 
 ### Request lifecycle
 
